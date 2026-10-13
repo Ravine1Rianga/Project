@@ -1,0 +1,69 @@
+{
+    "held_out_test_metrics": {
+        "auc_roc": 0.9548,
+        "sensitivity": 0.9212,
+        "specificity": 0.8551,
+        "precision": 0.7327,
+        "f1_score": 0.8162,
+        "accuracy": 0.875
+    },
+    "baseline_comparison": {
+        "baseline_auc": 0.9638,
+        "ensemble_auc": 0.9548,
+        "improvement_percentage_points": -0.9
+    },
+    "calibration_metrics": {
+        "brier_score": 0.0885,
+        "calibration_slope": 0.802,
+        "calibration_intercept": 0.033
+    },
+    "cross_validation_results": {
+        "Baseline (Logistic Reg)": {
+            "mean_auc": 0.9637,
+            "std_auc": 0.0056,
+            "mean_sensitivity": 0.9046,
+            "mean_specificity": 0.8775
+        },
+        "Random Forest": {
+            "mean_auc": 0.9478,
+            "std_auc": 0.0084,
+            "mean_sensitivity": 0.8485,
+            "mean_specificity": 0.8931
+        },
+        "XGBoost": {
+            "mean_auc": 0.9559,
+            "std_auc": 0.0078,
+            "mean_sensitivity": 0.8568,
+            "mean_specificity": 0.8976
+        },
+        "LightGBM": {
+            "mean_auc": 0.9545,
+            "std_auc": 0.0082,
+            "mean_sensitivity": 0.8527,
+            "mean_specificity": 0.8967
+        },
+        "CatBoost": {
+            "mean_auc": 0.9589,
+            "std_auc": 0.0061,
+            "mean_sensitivity": 0.8838,
+            "mean_specificity": 0.8877
+        },
+        "Soft-Voting Ensemble": {
+            "mean_auc": 0.9567,
+            "std_auc": 0.0072,
+            "mean_sensitivity": 0.8589,
+            "mean_specificity": 0.8944
+        }
+    },
+    "sample_chw_explanation": {
+        "child_id": "WA-4676",
+        "calibrated_risk": 1.0,
+        "tier": "HIGH RISK",
+        "action": "Urgent referral to sub-county health facility / paediatrician for comprehensive clinical and developmental evaluation.",
+        "bullets": [
+            "Factor #1: Weight-for-Height (Acute Wasting Status) (INCREASED risk by ~160.1%).",
+            "Factor #2: Acute Wasting Compounded by Recent Sickness (INCREASED risk by ~114.7%).",
+            "Factor #3: Childhood Vaccination Completion (DECREASED risk (protective) by ~79.6%)."
+        ]
+    }
+}

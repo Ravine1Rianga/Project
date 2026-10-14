@@ -50,3 +50,12 @@ Thumbs.db
 
 # CatBoost training outputs
 catboost_info/
+
+# Android / Gradle
+.gradle/
+build/
+**/build/
+local.properties
+*.iml
+.cxx/
+captures/

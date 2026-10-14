@@ -1,0 +1,4 @@
+# Add project specific ProGuard rules here.
+-keep class ai.onnxruntime.** { *; }
+-keep class com.strathmore.afyaearly.ml.** { *; }
+-keep class com.strathmore.afyaearly.data.local.entity.** { *; }

@@ -1,12 +1,8 @@
-package com.strathmore.afyaearly.ml
+package com.strath.finalpr0ject.ml
 
 import ai.onnxruntime.*
 import android.content.Context
-import com.strathmore.afyaearly.data.local.entity.PatientEntity
-import com.strathmore.afyaearly.data.local.entity.ScreeningRecordEntity
 import java.nio.FloatBuffer
-import kotlin.math.abs
-import kotlin.math.roundToInt
 
 data class InferenceOutput(
     val rawProbability: Float,
@@ -39,9 +35,8 @@ class ONNXInferenceEngine(private val context: Context) {
         }
     }
 
-    fun predict(patient: PatientEntity, screening: ScreeningRecordEntity): InferenceOutput {
-        val vector = preprocessor.prepareFeatureVector(patient, screening)
-
+    fun predict(input: ScreeningInput): InferenceOutput {
+        val vector = preprocessor.prepareFeatureVector(input)
         var rawProb = 0.5f
 
         ortSession?.let { session ->
@@ -55,7 +50,6 @@ class ONNXInferenceEngine(private val context: Context) {
                     )
 
                     val results = session.run(mapOf(inputName to tensor))
-                    // Output probability extraction
                     val rawOutput = results.get(1).value
                     if (rawOutput is Array<*>) {
                         val row = rawOutput[0]
@@ -66,27 +60,22 @@ class ONNXInferenceEngine(private val context: Context) {
                         }
                     }
                 } catch (e: Exception) {
-                    e.printStackTrace()
-                    // Fallback biological heuristic if runtime encounters device anomaly
-                    rawProb = computeFallbackProb(screening)
+                    rawProb = computeFallbackProb(input)
                 }
             }
         } ?: run {
-            rawProb = computeFallbackProb(screening)
+            rawProb = computeFallbackProb(input)
         }
 
-        // Apply Isotonic Calibration Curve mapping
         val calibratedProb = calibrateProbability(rawProb)
 
-        // Clinical Triage Determination
         val (tier, action) = when {
             calibratedProb < 0.30f -> "LOW RISK" to "Maintain standard nutritional monitoring and age-appropriate stimulation."
             calibratedProb < 0.65f -> "MODERATE RISK" to "Schedule follow-up visit in 14 days; counsel caregiver on diverse feeding and motor activities."
             else -> "HIGH RISK" to "Urgent referral to sub-county hospital for comprehensive paediatric and neurodevelopmental evaluation."
         }
 
-        // Generate top-3 plain-language explanations (FR-05)
-        val factors = generateContributingFactors(patient, screening)
+        val factors = generateContributingFactors(input)
 
         return InferenceOutput(
             rawProbability = rawProb,
@@ -98,7 +87,6 @@ class ONNXInferenceEngine(private val context: Context) {
     }
 
     private fun calibrateProbability(p: Float): Float {
-        // Isotonic mapping calibrated during evaluation
         return when {
             p <= 0.15f -> p * 0.8f
             p >= 0.85f -> kotlin.math.min(1.0f, p * 1.05f)
@@ -106,7 +94,7 @@ class ONNXInferenceEngine(private val context: Context) {
         }
     }
 
-    private fun computeFallbackProb(s: ScreeningRecordEntity): Float {
+    private fun computeFallbackProb(s: ScreeningInput): Float {
         var score = 0.3f
         if (s.whz < -2.0f) score += 0.3f
         if (s.haz < -2.0f) score += 0.25f
@@ -115,19 +103,15 @@ class ONNXInferenceEngine(private val context: Context) {
         return kotlin.math.min(0.99f, score)
     }
 
-    private fun generateContributingFactors(
-        patient: PatientEntity,
-        screening: ScreeningRecordEntity
-    ): List<ClinicalFactor> {
+    private fun generateContributingFactors(s: ScreeningInput): List<ClinicalFactor> {
         val list = mutableListOf<ClinicalFactor>()
 
-        // 1. Acute Wasting / MUAC
-        if (screening.muacCm < 11.5f || screening.whz < -2.0f) {
+        if (s.muacCm < 11.5f || s.whz < -2.0f) {
             list.add(
                 ClinicalFactor(
                     rank = 1,
                     name = "Acute Somatic Wasting",
-                    statement = "Critically low MUAC (${screening.muacCm} cm) and acute wasting elevate delay risk.",
+                    statement = "Critically low MUAC (${s.muacCm} cm) and acute wasting elevate delay risk.",
                     isRiskFactor = true
                 )
             )
@@ -136,14 +120,13 @@ class ONNXInferenceEngine(private val context: Context) {
                 ClinicalFactor(
                     rank = 1,
                     name = "Adequate Arm Circumference",
-                    statement = "Preserved MUAC (${screening.muacCm} cm) provides positive protective buffering.",
+                    statement = "Preserved MUAC (${s.muacCm} cm) provides positive protective buffering.",
                     isRiskFactor = false
                 )
             )
         }
 
-        // 2. Chronic Linear Stunting
-        if (screening.haz < -2.0f) {
+        if (s.haz < -2.0f) {
             list.add(
                 ClinicalFactor(
                     rank = 2,
@@ -152,7 +135,7 @@ class ONNXInferenceEngine(private val context: Context) {
                     isRiskFactor = true
                 )
             )
-        } else if (screening.ddiScore <= 2) {
+        } else if (s.ddiScore <= 2) {
             list.add(
                 ClinicalFactor(
                     rank = 2,
@@ -172,8 +155,7 @@ class ONNXInferenceEngine(private val context: Context) {
             )
         }
 
-        // 3. Health & Vaccination
-        if (screening.vaccinationComplete == 1) {
+        if (s.vaccinationComplete == 1) {
             list.add(
                 ClinicalFactor(
                     rank = 3,
@@ -182,7 +164,7 @@ class ONNXInferenceEngine(private val context: Context) {
                     isRiskFactor = false
                 )
             )
-        } else if (screening.diarrhoeaRecent == 1 || screening.feverRecent == 1) {
+        } else if (s.diarrhoeaRecent == 1 || s.feverRecent == 1) {
             list.add(
                 ClinicalFactor(
                     rank = 3,
@@ -196,7 +178,7 @@ class ONNXInferenceEngine(private val context: Context) {
                 ClinicalFactor(
                     rank = 3,
                     name = "Maternal Education",
-                    statement = "Caregiver formal schooling (${patient.maternalEducation}) supports protective care practices.",
+                    statement = "Caregiver formal schooling (${s.child.maternalEducation}) supports protective care practices.",
                     isRiskFactor = false
                 )
             )

@@ -2,14 +2,15 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("com.google.devtools.ksp")
+    id("com.google.gms.google-services")
 }
 
 android {
-    namespace = "com.strathmore.afyaearly"
+    namespace = "com.strath.finalpr0ject"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.strathmore.afyaearly"
+        applicationId = "com.strath.finalpr0ject"
         minSdk = 24
         targetSdk = 34
         versionCode = 1
@@ -20,7 +21,6 @@ android {
             useSupportLibrary = true
         }
 
-        // Room schema location
         ksp {
             arg("room.schemaLocation", "$projectDir/schemas")
         }
@@ -76,20 +76,25 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
     implementation("androidx.navigation:navigation-compose:2.7.7")
 
-    // Room Database
+    // Firebase Backend SDKs (Firebase BoM)
+    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+    implementation("com.google.firebase:firebase-analytics-ktx")
+    implementation("com.google.firebase:firebase-auth-ktx")
+    implementation("com.google.firebase:firebase-firestore-ktx")
+
+    // Room Database (Local encrypted offline storage)
     val roomVersion = "2.6.1"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
 
-    // ONNX Runtime Mobile (Edge Machine Learning)
+    // ONNX Runtime Mobile (Edge ML Inference)
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.18.0")
 
-    // Gson for config JSON parsing
+    // Gson & Coroutines
     implementation("com.google.code.gson:gson:2.10.1")
-
-    // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.0")
 
     // Testing
     testImplementation("junit:junit:4.13.2")

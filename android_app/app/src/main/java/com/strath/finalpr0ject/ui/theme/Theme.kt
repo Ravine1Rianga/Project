@@ -1,4 +1,4 @@
-package com.strathmore.afyaearly.ui.theme
+package com.strath.finalpr0ject.ui.theme
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.lightColorScheme

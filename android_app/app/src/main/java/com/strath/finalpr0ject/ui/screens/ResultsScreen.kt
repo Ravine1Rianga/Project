@@ -1,4 +1,4 @@
-package com.strathmore.afyaearly.ui.screens
+package com.strath.finalpr0ject.ui.screens
 
 import android.widget.Toast
 import androidx.compose.foundation.background
@@ -20,16 +20,16 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.strathmore.afyaearly.data.local.entity.PatientEntity
-import com.strathmore.afyaearly.data.local.entity.ScreeningRecordEntity
-import com.strathmore.afyaearly.ml.InferenceOutput
-import com.strathmore.afyaearly.ui.theme.*
+import com.strath.finalpr0ject.data.model.ChildProfile
+import com.strath.finalpr0ject.ml.InferenceOutput
+import com.strath.finalpr0ject.ml.ScreeningInput
+import com.strath.finalpr0ject.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ResultsScreen(
-    patient: PatientEntity,
-    screening: ScreeningRecordEntity,
+    child: ChildProfile,
+    screening: ScreeningInput,
     result: InferenceOutput,
     onNavigateBack: () -> Unit,
     onDone: () -> Unit
@@ -46,7 +46,7 @@ fun ResultsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Screening Assessment", fontWeight = FontWeight.Bold) },
+                title = { Text("AI Risk Assessment", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
@@ -69,16 +69,10 @@ fun ResultsScreen(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text(patient.name, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                        Text("ID: ${patient.childId} • Age: ${patient.ageMonths}m (${patient.sex})", fontSize = 13.sp, color = Color.Gray)
-                        Text("County: ${patient.county}", fontSize = 13.sp, color = Color.Gray)
-                    }
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(child.name, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text("ID: ${child.childId} • Age: ${child.ageMonths}m (${child.sex})", fontSize = 13.sp, color = Color.Gray)
+                    Text("Assigned CHW: ${child.assignedChwName} • ${child.county}", fontSize = 13.sp, color = Color.Gray)
                 }
             }
 
@@ -131,7 +125,7 @@ fun ResultsScreen(
                 }
             }
 
-            // Plain-Language SHAP Explainability Section (FR-05)
+            // Plain-Language SHAP Explainability Section
             Card(
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -142,7 +136,7 @@ fun ResultsScreen(
                         Icon(Icons.Default.Info, contentDescription = null, tint = TealPrimary)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Key Factors Driving This Score (SHAP)",
+                            text = "Key Factors Driving Score (SHAP)",
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
                             color = TealPrimary
@@ -181,38 +175,10 @@ fun ResultsScreen(
                 }
             }
 
-            // Anthropometrics Summary Table
-            Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Biological Screening Profile", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("MUAC:", color = Color.Gray)
-                        Text("${screening.muacCm} cm", fontWeight = FontWeight.SemiBold)
-                    }
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Height-for-Age (HAZ):", color = Color.Gray)
-                        Text("${screening.haz}", fontWeight = FontWeight.SemiBold)
-                    }
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Weight-for-Height (WHZ):", color = Color.Gray)
-                        Text("${screening.whz}", fontWeight = FontWeight.SemiBold)
-                    }
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Dietary Diversity (DDI):", color = Color.Gray)
-                        Text("${screening.ddiScore}/7 food groups", fontWeight = FontWeight.SemiBold)
-                    }
-                }
-            }
-
             // Action Buttons
             OutlinedButton(
                 onClick = {
-                    Toast.makeText(context, "Referral summary note generated for ${patient.childId}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Referral summary note generated for ${child.name}", Toast.LENGTH_SHORT).show()
                 },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp)
@@ -230,7 +196,7 @@ fun ResultsScreen(
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = TealPrimary)
             ) {
-                Text("Save & Return to Dashboard", fontWeight = FontWeight.Bold)
+                Text("Sync to Firebase & Return", fontWeight = FontWeight.Bold)
             }
 
             Spacer(modifier = Modifier.height(24.dp))

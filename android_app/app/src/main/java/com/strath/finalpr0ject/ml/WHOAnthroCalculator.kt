@@ -1,4 +1,4 @@
-package com.strathmore.afyaearly.ml
+package com.strath.finalpr0ject.ml
 
 import kotlin.math.ln
 import kotlin.math.max

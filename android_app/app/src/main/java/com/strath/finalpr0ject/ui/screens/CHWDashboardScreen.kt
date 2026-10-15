@@ -226,3 +226,13 @@ fun CHWDashboardScreen(
         )
     }
 }
+
+@androidx.compose.ui.tooling.preview.Preview(showBackground = true)
+@Composable
+fun CHWDashboardScreenPreview() {
+    CHWDashboardScreen(
+        chwId = "CHW-1042",
+        onStartScreeningForChild = {},
+        onSignOut = {}
+    )
+}

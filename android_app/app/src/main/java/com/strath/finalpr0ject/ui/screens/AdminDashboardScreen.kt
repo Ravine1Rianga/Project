@@ -404,3 +404,9 @@ fun AdminDashboardScreen(
         )
     }
 }
+
+@androidx.compose.ui.tooling.preview.Preview(showBackground = true)
+@Composable
+fun AdminDashboardScreenPreview() {
+    AdminDashboardScreen(onSignOut = {})
+}

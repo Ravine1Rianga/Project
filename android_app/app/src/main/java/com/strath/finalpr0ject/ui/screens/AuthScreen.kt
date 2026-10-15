@@ -258,3 +258,9 @@ fun AuthScreen(
         }
     }
 }
+
+@androidx.compose.ui.tooling.preview.Preview(showBackground = true)
+@Composable
+fun AuthScreenPreview() {
+    AuthScreen(onRoleSelected = { _, _ -> })
+}

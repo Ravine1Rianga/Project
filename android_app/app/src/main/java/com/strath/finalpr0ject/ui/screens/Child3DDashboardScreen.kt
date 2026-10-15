@@ -299,3 +299,12 @@ fun Child3DDashboardScreen(
         }
     }
 }
+
+@androidx.compose.ui.tooling.preview.Preview(showBackground = true)
+@Composable
+fun Child3DDashboardScreenPreview() {
+    Child3DDashboardScreen(
+        childId = "TK-1042",
+        onSignOut = {}
+    )
+}

@@ -1,0 +1,7 @@
+Model,Threshold,AUC-ROC,AUPRC,Sensitivity (Recall),Specificity,Precision,F1-Score,Accuracy,Brier Score
+Logistic Regression (Baseline),0.5,0.9638,0.9206,0.9087,0.873,0.7552,0.8249,0.8838,0.0791
+Random Forest,0.5,0.9422,0.8697,0.8382,0.8819,0.7537,0.7937,0.8688,0.0912
+XGBoost,0.5,0.9529,0.8926,0.8838,0.8837,0.7662,0.8208,0.8838,0.0833
+LightGBM,0.5,0.9551,0.9011,0.8672,0.8909,0.7741,0.818,0.8838,0.0812
+CatBoost,0.5,0.9572,0.9052,0.9004,0.8712,0.7509,0.8189,0.88,0.0825
+Proposed Soft-Voting Ensemble (Tau=0.40),0.4,0.9548,0.8981,0.9212,0.8551,0.7327,0.8162,0.875,0.0817

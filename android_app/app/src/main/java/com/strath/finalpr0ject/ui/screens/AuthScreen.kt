@@ -222,7 +222,7 @@ fun AuthScreen(
                             val targetId = when (selectedRole) {
                                 UserRole.ADMIN -> "admin-01"
                                 UserRole.CHW -> "CHW-1042"
-                                UserRole.CHILD -> "TK-1042"
+                                UserRole.CHILD, UserRole.GUARDIAN, UserRole.PARENT -> "TK-1042"
                             }
                             onRoleSelected(selectedRole, targetId)
                         },
@@ -234,7 +234,7 @@ fun AuthScreen(
                             containerColor = when (selectedRole) {
                                 UserRole.ADMIN -> AdminIndigo
                                 UserRole.CHW -> TealPrimary
-                                UserRole.CHILD -> ChildCoral
+                                UserRole.CHILD, UserRole.GUARDIAN, UserRole.PARENT -> ChildCoral
                             }
                         )
                     ) {

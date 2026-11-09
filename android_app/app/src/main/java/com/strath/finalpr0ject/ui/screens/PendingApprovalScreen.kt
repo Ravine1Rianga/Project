@@ -43,6 +43,19 @@ fun PendingApprovalScreen(
         scope.launch {
             isChecking = true
             checkResultNotice = null
+
+            // 1. Check local Room database cache first (offline-first check)
+            val app = context.applicationContext as? com.strath.finalpr0ject.AfyaEarlyApp
+            val localProfile = app?.offlineRepo?.getProfileByEmailOffline(user.email)
+            if (localProfile != null && (localProfile.isVerified || localProfile.verificationStatus.equals("approved", ignoreCase = true))) {
+                isChecking = false
+                isApprovedState = true
+                checkResultNotice = "Account Approved (Local Cache)! Redirecting to your dashboard..."
+                Toast.makeText(context, "Account Approved! Welcome, ${localProfile.displayName}", Toast.LENGTH_SHORT).show()
+                onApproved(localProfile)
+                return@launch
+            }
+
             val result = repository.checkCHWVerificationStatus(user.uid, user.email)
             isChecking = false
             result.onSuccess { updatedProfile ->
@@ -54,6 +67,11 @@ fun PendingApprovalScreen(
                 )
                 if (isActuallyApproved) {
                     isApprovedState = true
+                    // Cache the approval locally so future logins work offline
+                    try {
+                        app?.offlineRepo?.cacheUserProfile(updatedProfile!!, pendingSync = false)
+                    } catch (_: Exception) {}
+
                     checkResultNotice = "Account Approved! Redirecting to your Community Health Worker dashboard..."
                     Toast.makeText(context, "Account Approved! Welcome, ${updatedProfile!!.displayName}", Toast.LENGTH_SHORT).show()
                     onApproved(updatedProfile)

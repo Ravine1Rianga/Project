@@ -66,18 +66,18 @@ fun Child3DDashboardScreen(
     // Language Toggle State: False = English, True = Kiswahili
     var isSwahili by remember { mutableStateOf(false) }
 
-    // Dynamic Child Profile State
-    var childName by remember { mutableStateOf(userProfile?.assignedChildName?.ifEmpty { "Akiru Ewoi" } ?: "Akiru Ewoi") }
-    var ageMonths by remember { mutableStateOf(18) }
+    // Dynamic Child Profile State - initialized from authenticated user's assigned child
+    var childName by remember { mutableStateOf(userProfile?.assignedChildName?.ifEmpty { "My Child" } ?: "My Child") }
+    var ageMonths by remember { mutableStateOf(12) }
     var isMale by remember { mutableStateOf(true) }
-    var heightCm by remember { mutableStateOf(74.0f) }
-    var weightKg by remember { mutableStateOf(9.2f) }
-    var muacCm by remember { mutableStateOf(11.2f) }
-    var hazScore by remember { mutableStateOf(-2.4f) }
-    var assignedChwName by remember { mutableStateOf("Maria Akiru") }
-    var assignedChwPhone by remember { mutableStateOf("+254712345678") }
+    var heightCm by remember { mutableStateOf(75.0f) }
+    var weightKg by remember { mutableStateOf(9.0f) }
+    var muacCm by remember { mutableStateOf(12.5f) }
+    var hazScore by remember { mutableStateOf(0.0f) }
+    var assignedChwName by remember { mutableStateOf("Assigned Community Health Worker") }
+    var assignedChwPhone by remember { mutableStateOf("") }
     var county by remember { mutableStateOf(userProfile?.county ?: "Turkana") }
-    var facility by remember { mutableStateOf("Kakuma West Sub-County Hospital") }
+    var facility by remember { mutableStateOf("Local Health Facility") }
 
     // Parent Profile State & Edit Dialog
     var parentName by remember { mutableStateOf(userProfile?.displayName?.ifEmpty { "Parent" } ?: "Parent") }
@@ -101,32 +101,31 @@ fun Child3DDashboardScreen(
     // Modal dialog to update measurements & growth
     var showUpdateMeasurementsDialog by remember { mutableStateOf(false) }
 
-    // Load child dynamically from Room database or Firestore
+    // Load child dynamically from Room database or Firestore via OfflineRepository
+    val app = context.applicationContext as? com.strath.finalpr0ject.AfyaEarlyApp
     LaunchedEffect(childId) {
         try {
-            val dbChild = AppDatabase.getDatabase(context).childDao().getChildById(childId)
-            if (dbChild != null) {
-                childName = dbChild.name
-                ageMonths = dbChild.ageMonths
-                isMale = dbChild.sex.equals("Male", ignoreCase = true)
-                muacCm = dbChild.currentMuac
-                hazScore = dbChild.currentHaz
-                if (dbChild.assignedChwName.isNotBlank()) assignedChwName = dbChild.assignedChwName
-                if (dbChild.county.isNotBlank()) county = dbChild.county
-                // If height not explicitly stored, derive from HAZ
-                heightCm = (expectedHeightCm + (dbChild.currentHaz * 3.2f)).coerceIn(45f, 120f)
+            val child = app?.offlineRepo?.getChildProfile(childId)
+            if (child != null) {
+                childName = child.name
+                ageMonths = child.ageMonths
+                isMale = child.sex.equals("Male", ignoreCase = true)
+                muacCm = child.currentMuac
+                hazScore = child.currentHaz
+                if (child.assignedChwName.isNotBlank()) assignedChwName = child.assignedChwName
+                if (child.county.isNotBlank()) county = child.county
+                heightCm = (expectedHeightCm + (child.currentHaz * 3.2f)).coerceIn(45f, 120f)
             } else {
-                val remoteResult = repository.getChildProfile(childId)
-                remoteResult.onSuccess { child ->
-                    if (child != null) {
-                        childName = child.name
-                        ageMonths = child.ageMonths
-                        isMale = child.sex.equals("Male", ignoreCase = true)
-                        muacCm = child.currentMuac
-                        hazScore = child.currentHaz
-                        if (child.assignedChwName.isNotBlank()) assignedChwName = child.assignedChwName
-                        heightCm = (expectedHeightCm + (child.currentHaz * 3.2f)).coerceIn(45f, 120f)
-                    }
+                val dbChild = AppDatabase.getDatabase(context).childDao().getChildById(childId)
+                if (dbChild != null) {
+                    childName = dbChild.name
+                    ageMonths = dbChild.ageMonths
+                    isMale = dbChild.sex.equals("Male", ignoreCase = true)
+                    muacCm = dbChild.currentMuac
+                    hazScore = dbChild.currentHaz
+                    if (dbChild.assignedChwName.isNotBlank()) assignedChwName = dbChild.assignedChwName
+                    if (dbChild.county.isNotBlank()) county = dbChild.county
+                    heightCm = (expectedHeightCm + (dbChild.currentHaz * 3.2f)).coerceIn(45f, 120f)
                 }
             }
         } catch (_: Exception) {}
@@ -417,6 +416,12 @@ fun Child3DDashboardScreen(
                 expectedHeightCm = expectedHeightCm,
                 muacCm = muacCm,
                 hazScore = hazScore
+            )
+
+            // 3b. MATERNAL & INFANT NUTRITION WHEEL (0-9m Breastfeeding & Weaning)
+            com.strath.finalpr0ject.ui.components.MaternalAndInfantNutritionCard(
+                childAgeMonths = ageMonths,
+                isSwahili = isSwahili
             )
 
             // 4. FIRST 1,000 DAYS GOLDEN WINDOW (SIMPLIFIED FOR MOTHERS)
@@ -795,7 +800,7 @@ fun Child3DDashboardScreen(
                         muacCm = m
                         hazScore = zs.haz
 
-                        // Persist to Room & Firestore
+                        // Persist to Room & queue sync via OfflineRepository
                         scope.launch {
                             val updatedChild = ChildProfile(
                                 childId = childId,
@@ -803,7 +808,7 @@ fun Child3DDashboardScreen(
                                 ageMonths = parsedAge,
                                 sex = if (editIsMale) "Male" else "Female",
                                 county = county,
-                                assignedChwId = "CHW-1042",
+                                assignedChwId = "",
                                 assignedChwName = assignedChwName,
                                 currentHaz = zs.haz,
                                 currentWhz = zs.whz,
@@ -812,8 +817,12 @@ fun Child3DDashboardScreen(
                                 lastScreeningDate = System.currentTimeMillis()
                             )
                             try {
-                                AppDatabase.getDatabase(context).childDao().insertOrUpdate(ChildEntity.fromDomainModel(updatedChild))
-                                repository.updateChildProfile(updatedChild)
+                                if (app != null) {
+                                    app.offlineRepo.updateChildProfile(updatedChild)
+                                } else {
+                                    AppDatabase.getDatabase(context).childDao().insertOrUpdate(ChildEntity.fromDomainModel(updatedChild, pendingSync = true))
+                                    repository.updateChildProfile(updatedChild)
+                                }
                             } catch (_: Exception) {}
                         }
 

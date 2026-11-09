@@ -13,6 +13,12 @@ interface ScreeningDao {
     @Query("SELECT * FROM screenings WHERE childId = :childId ORDER BY timestamp DESC")
     fun observeScreeningsForChild(childId: String): Flow<List<ScreeningEntity>>
 
+    @Query("SELECT * FROM screenings WHERE childId = :childId ORDER BY timestamp ASC")
+    fun observeScreeningsForChildAsc(childId: String): Flow<List<ScreeningEntity>>
+
+    @Query("SELECT * FROM screenings WHERE childId = :childId ORDER BY timestamp ASC")
+    suspend fun getScreeningsForChildAsc(childId: String): List<ScreeningEntity>
+
     @Query("SELECT * FROM screenings WHERE isSynced = 0 ORDER BY timestamp ASC")
     suspend fun getUnsyncedScreenings(): List<ScreeningEntity>
 

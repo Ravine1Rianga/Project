@@ -91,6 +91,12 @@ dependencies {
     // ONNX Runtime Mobile (Edge ML Inference)
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.18.0")
 
+    // Jetpack Security (EncryptedSharedPreferences — offline session cache)
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
+    // WorkManager (background sync when connectivity returns)
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
+
     // Gson & Coroutines
     implementation("com.google.code.gson:gson:2.10.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")

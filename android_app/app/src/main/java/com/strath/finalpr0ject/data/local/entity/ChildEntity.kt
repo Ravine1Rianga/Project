@@ -26,7 +26,11 @@ data class ChildEntity(
     val motorMilestoneScore: Int,
     val cognitiveMilestoneScore: Int,
     val languageMilestoneScore: Int,
-    val isSynced: Boolean = true
+    val guardianUid: String = "",           // UID of the parent/guardian who enrolled this child
+    val photoLocalPath: String = "",        // Internal storage path for offline avatar photo
+    val pendingSync: Boolean = false,       // True = enrolled offline, not yet pushed to Firestore
+    val approvalStatus: String = "approved", // "pending_approval", "approved", "rejected"
+    val isApprovedForTracking: Boolean = true
 ) {
     fun toDomainModel(): ChildProfile = ChildProfile(
         childId = childId,
@@ -47,11 +51,19 @@ data class ChildEntity(
         lastScreeningDate = lastScreeningDate,
         motorMilestoneScore = motorMilestoneScore,
         cognitiveMilestoneScore = cognitiveMilestoneScore,
-        languageMilestoneScore = languageMilestoneScore
+        languageMilestoneScore = languageMilestoneScore,
+        guardianUid = guardianUid,
+        photoLocalPath = photoLocalPath,
+        approvalStatus = approvalStatus,
+        isApprovedForTracking = isApprovedForTracking
     )
 
     companion object {
-        fun fromDomainModel(child: ChildProfile, isSynced: Boolean = true): ChildEntity = ChildEntity(
+        fun fromDomainModel(
+            child: ChildProfile,
+            pendingSync: Boolean = false,
+            isSynced: Boolean = !pendingSync
+        ): ChildEntity = ChildEntity(
             childId = child.childId,
             name = child.name,
             ageMonths = child.ageMonths,
@@ -71,7 +83,11 @@ data class ChildEntity(
             motorMilestoneScore = child.motorMilestoneScore,
             cognitiveMilestoneScore = child.cognitiveMilestoneScore,
             languageMilestoneScore = child.languageMilestoneScore,
-            isSynced = isSynced
+            guardianUid = child.guardianUid,
+            photoLocalPath = child.photoLocalPath,
+            pendingSync = if (!isSynced) true else pendingSync,
+            approvalStatus = child.approvalStatus,
+            isApprovedForTracking = child.isApprovedForTracking
         )
     }
 }

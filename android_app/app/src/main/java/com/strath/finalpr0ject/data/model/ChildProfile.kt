@@ -19,5 +19,10 @@ data class ChildProfile(
     val lastScreeningDate: Long = System.currentTimeMillis(),
     val motorMilestoneScore: Int = 85, // 0 - 100 for 3D visualizer
     val cognitiveMilestoneScore: Int = 80,
-    val languageMilestoneScore: Int = 75
+    val languageMilestoneScore: Int = 75,
+    val guardianUid: String = "",           // UID of the parent/guardian owning this child record
+    val photoLocalPath: String = "",        // Internal filesystem path for offline avatar photo
+    val approvalStatus: String = "approved", // "pending_approval", "approved", "rejected"
+    val isApprovedForTracking: Boolean = true
 )
+

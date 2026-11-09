@@ -259,9 +259,27 @@ fun SignInScreen(
         scope.launch {
             isLoading = true
             errorMessage = null
+
+            // 1. Offline fallback check
+            val offlineProfile = try {
+                val app = context.applicationContext as? com.strath.finalpr0ject.AfyaEarlyApp
+                val cached = app?.sessionManager?.getSession()
+                if (cached != null && cached.email.equals(targetEmail.trim(), ignoreCase = true)) {
+                    cached
+                } else {
+                    app?.offlineRepo?.getProfileByEmailOffline(targetEmail.trim())
+                }
+            } catch (_: Exception) { null }
+
             val result = repository.signInWithEmail(targetEmail, targetPass)
             isLoading = false
             result.onSuccess { profile ->
+                // Cache locally for offline use
+                try {
+                    val app = context.applicationContext as? com.strath.finalpr0ject.AfyaEarlyApp
+                    app?.offlineRepo?.cacheUserProfile(profile, pendingSync = false)
+                } catch (_: Exception) {}
+
                 val familyProfiles = repository.getProfilesForEmail(targetEmail).getOrDefault(emptyList())
                 if (familyProfiles.size > 1) {
                     multiProfiles = familyProfiles
@@ -270,6 +288,18 @@ fun SignInScreen(
                     routeUser(profile, onRoleResolved, onNavigateToPendingApproval, onNavigateToCompleteProfile)
                 }
             }.onFailure { ex ->
+                // If network failure or offline, but we have a cached offline profile, log in with it!
+                val isNetworkIssue = ex.message?.contains("network", ignoreCase = true) == true ||
+                        ex.message?.contains("timeout", ignoreCase = true) == true ||
+                        ex.message?.contains("offline", ignoreCase = true) == true ||
+                        ex.message?.contains("unable to resolve host", ignoreCase = true) == true
+
+                if (offlineProfile != null && isNetworkIssue) {
+                    Toast.makeText(context, "Logged in using offline mode", Toast.LENGTH_SHORT).show()
+                    routeUser(offlineProfile, onRoleResolved, onNavigateToPendingApproval, onNavigateToCompleteProfile)
+                    return@launch
+                }
+
                 errorMessage = when {
                     ex.message?.contains("Configuration not found", ignoreCase = true) == true ||
                     ex.message?.contains("CONFIGURATION_NOT_FOUND", ignoreCase = true) == true ->
@@ -281,6 +311,8 @@ fun SignInScreen(
                     ex.message?.contains("incorrect", ignoreCase = true) == true ||
                     ex.message?.contains("malformed", ignoreCase = true) == true ->
                         "Incorrect email or password. Please check your credentials or tap 'Forgot password'."
+                    isNetworkIssue && offlineProfile == null ->
+                        "No internet connection. Please connect once to sign in for the first time."
                     else -> ex.localizedMessage ?: "Sign-in failed. Please check your network and credentials."
                 }
             }

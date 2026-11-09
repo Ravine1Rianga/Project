@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.strath.finalpr0ject.data.local.dao.*
 import com.strath.finalpr0ject.data.local.entity.*
@@ -11,14 +12,26 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
+/**
+ * AppDatabase — version 4
+ * ========================
+ * Local SQLite database powering the full offline-first experience.
+ *
+ * Version history:
+ *   v1 → v2: Added user_profiles table; added guardianUid, photoLocalPath,
+ *             pendingSync columns to children table.
+ *   v2 → v3: Added ageMonths, weightKg, heightCm, feedingCategory to screenings table.
+ *   v3 → v4: Added approvalStatus and isApprovedForTracking to children table.
+ */
 @Database(
     entities = [
         ChildEntity::class,
         ScreeningEntity::class,
         NutritionEntity::class,
-        SyncQueueEntity::class
+        SyncQueueEntity::class,
+        UserProfileEntity::class
     ],
-    version = 1,
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -27,10 +40,63 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun screeningDao(): ScreeningDao
     abstract fun nutritionDao(): NutritionDao
     abstract fun syncQueueDao(): SyncQueueDao
+    abstract fun userProfileDao(): UserProfileDao
 
     companion object {
         @Volatile
         private var INSTANCE: AppDatabase? = null
+
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS user_profiles (
+                        uid TEXT NOT NULL PRIMARY KEY,
+                        email TEXT NOT NULL,
+                        displayName TEXT NOT NULL DEFAULT '',
+                        role TEXT NOT NULL DEFAULT 'PARENT',
+                        phone TEXT NOT NULL DEFAULT '',
+                        county TEXT NOT NULL DEFAULT 'Turkana',
+                        subCounty TEXT NOT NULL DEFAULT 'Turkana West',
+                        ward TEXT NOT NULL DEFAULT '',
+                        chwId TEXT NOT NULL DEFAULT '',
+                        chwFacility TEXT NOT NULL DEFAULT '',
+                        supervisingFacility TEXT NOT NULL DEFAULT '',
+                        isVerified INTEGER NOT NULL DEFAULT 0,
+                        verificationStatus TEXT NOT NULL DEFAULT 'pending',
+                        assignedChildId TEXT NOT NULL DEFAULT '',
+                        assignedChildName TEXT NOT NULL DEFAULT '',
+                        profileCompleted INTEGER NOT NULL DEFAULT 0,
+                        photoUrl TEXT NOT NULL DEFAULT '',
+                        photoLocalPath TEXT NOT NULL DEFAULT '',
+                        createdAt INTEGER NOT NULL DEFAULT 0,
+                        lastSyncTimestamp INTEGER NOT NULL DEFAULT 0,
+                        pendingSync INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_user_profiles_email ON user_profiles (email)")
+                db.execSQL("ALTER TABLE children ADD COLUMN guardianUid TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE children ADD COLUMN photoLocalPath TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE children ADD COLUMN pendingSync INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE screenings ADD COLUMN ageMonths INTEGER NOT NULL DEFAULT 12")
+                db.execSQL("ALTER TABLE screenings ADD COLUMN weightKg REAL NOT NULL DEFAULT 0.0")
+                db.execSQL("ALTER TABLE screenings ADD COLUMN heightCm REAL NOT NULL DEFAULT 0.0")
+                db.execSQL("ALTER TABLE screenings ADD COLUMN feedingCategory TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE children ADD COLUMN approvalStatus TEXT NOT NULL DEFAULT 'approved'")
+                db.execSQL("ALTER TABLE children ADD COLUMN isApprovedForTracking INTEGER NOT NULL DEFAULT 1")
+            }
+        }
 
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -39,123 +105,11 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "afya_early_offline.db"
                 )
-                    .addCallback(DatabasePrepopulateCallback())
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance
                 instance
-            }
-        }
-
-        private class DatabasePrepopulateCallback : RoomDatabase.Callback() {
-            override fun onCreate(db: SupportSQLiteDatabase) {
-                super.onCreate(db)
-                INSTANCE?.let { database ->
-                    CoroutineScope(Dispatchers.IO).launch {
-                        seedDatabase(database)
-                    }
-                }
-            }
-
-            private suspend fun seedDatabase(db: AppDatabase) {
-                val childDao = db.childDao()
-                val nutritionDao = db.nutritionDao()
-                val screeningDao = db.screeningDao()
-
-                val seedChildren = listOf(
-                    ChildEntity(
-                        childId = "TK-1042",
-                        name = "Akiru Ewoi",
-                        ageMonths = 18,
-                        sex = "Male",
-                        county = "Turkana",
-                        assignedChwId = "CHW-1042",
-                        assignedChwName = "Maria Akiru",
-                        maternalEducation = "Primary",
-                        waterSource = "Unimproved Well",
-                        householdSize = 5,
-                        currentHaz = -2.4f,
-                        currentWhz = -1.6f,
-                        currentMuac = 12.5f,
-                        latestRiskTier = "MODERATE RISK",
-                        latestProbability = 0.68f,
-                        lastScreeningDate = System.currentTimeMillis() - 86400000L * 3,
-                        motorMilestoneScore = 78,
-                        cognitiveMilestoneScore = 80,
-                        languageMilestoneScore = 72,
-                        isSynced = true
-                    ),
-                    ChildEntity(
-                        childId = "TK-1043",
-                        name = "Ekai Lomor",
-                        ageMonths = 22,
-                        sex = "Female",
-                        county = "Turkana",
-                        assignedChwId = "CHW-1042",
-                        assignedChwName = "Maria Akiru",
-                        maternalEducation = "None",
-                        waterSource = "River Bed",
-                        householdSize = 7,
-                        currentHaz = -3.2f,
-                        currentWhz = -2.8f,
-                        currentMuac = 11.2f,
-                        latestRiskTier = "HIGH RISK",
-                        latestProbability = 0.89f,
-                        lastScreeningDate = System.currentTimeMillis() - 86400000L * 1,
-                        motorMilestoneScore = 60,
-                        cognitiveMilestoneScore = 65,
-                        languageMilestoneScore = 58,
-                        isSynced = true
-                    ),
-                    ChildEntity(
-                        childId = "TK-1044",
-                        name = "Lokai Chegem",
-                        ageMonths = 14,
-                        sex = "Male",
-                        county = "Turkana",
-                        assignedChwId = "CHW-1042",
-                        assignedChwName = "Maria Akiru",
-                        maternalEducation = "Secondary",
-                        waterSource = "Piped Water Kiosk",
-                        householdSize = 4,
-                        currentHaz = -0.8f,
-                        currentWhz = -0.4f,
-                        currentMuac = 13.8f,
-                        latestRiskTier = "LOW RISK",
-                        latestProbability = 0.18f,
-                        lastScreeningDate = System.currentTimeMillis() - 86400000L * 5,
-                        motorMilestoneScore = 92,
-                        cognitiveMilestoneScore = 90,
-                        languageMilestoneScore = 88,
-                        isSynced = true
-                    )
-                )
-                childDao.insertAll(seedChildren)
-
-                // Seed sample nutrition log
-                nutritionDao.insertMeal(
-                    NutritionEntity(
-                        childId = "TK-1042",
-                        mealDescription = "Sorghum porridge and fresh camel milk",
-                        categoriesString = "Dairy,Grains",
-                        calculatedDdi = 4.2f,
-                        isSynced = true
-                    )
-                )
-
-                // Seed sample clinical screening
-                screeningDao.insertScreening(
-                    ScreeningEntity(
-                        childId = "TK-1042",
-                        haz = -2.4f,
-                        whz = -1.6f,
-                        muac = 12.5f,
-                        stuntingRiskTier = "MODERATE RISK",
-                        predictedProbability = 0.68f,
-                        clinicalNotes = "Mild bilateral muscle wasting. Prescribed supplementary feeding with Ready-to-Use Supplementary Food (RUSF).",
-                        isSynced = true
-                    )
-                )
             }
         }
     }

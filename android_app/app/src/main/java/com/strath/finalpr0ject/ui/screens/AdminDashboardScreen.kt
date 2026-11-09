@@ -21,6 +21,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.strath.finalpr0ject.data.model.CHWProfile
@@ -48,85 +49,56 @@ fun AdminDashboardScreen(
     val context = LocalContext.current
     val repository = remember { FirebaseRepository() }
     val scope = rememberCoroutineScope()
-    var selectedTab by remember { mutableIntStateOf(0) } // 0: CHWs, 1: Parents, 2: Children, 3: Analytics
+    // 0: CHWs, 1: Parents, 2: Children, 3: Pending Approvals, 4: Analytics
+    var selectedTab by remember { mutableIntStateOf(0) }
 
-    // Mock initial state for preview & demo sync
-    var chwList by remember {
-        mutableStateOf(
-            listOf(
-                CHWProfile("CHW-1042", "Maria Akiru", "maria.akiru@health.go.ke", "+254712345678", "Turkana", "Kakuma West", 5, 2, "Active"),
-                CHWProfile("CHW-1088", "Peter Locham", "p.locham@health.go.ke", "+254723456789", "Turkana", "Lodwar North", 3, 0, "Active"),
-                CHWProfile("CHW-1105", "Fatuma Wario", "f.wario@health.go.ke", "+254734567890", "Marsabit", "Moyale South", 4, 1, "Pending Approval")
-            )
-        )
-    }
+    // OfflineRepository (Room-backed, single source of truth)
+    val app = context.applicationContext as? com.strath.finalpr0ject.AfyaEarlyApp
 
-    // Live Firestore CHWs combined with fallback demo list
+    // Live CHW profiles from Room (reactive)
+    val localCHWList by (app?.offlineRepo?.observeAllCHWProfiles()
+        ?: kotlinx.coroutines.flow.flowOf(emptyList())).collectAsState(initial = emptyList())
+
+    // Live Firestore CHWs (Firestore-backed for multi-device visibility)
     val liveChwList by repository.getAllCHWs().collectAsState(initial = emptyList())
-    val displayedChwList: List<CHWProfile> = if (liveChwList.isNotEmpty()) liveChwList else chwList
 
-    // Live Firestore Parents combined with fallback demo list
+    // Merge: Firestore is authoritative if populated, else fall back to Room
+    val displayedChwList: List<CHWProfile> = liveChwList.ifEmpty {
+        // Convert UserProfile CHWs from Room to CHWProfile for display
+        localCHWList.map { p ->
+            CHWProfile(
+                chwId = p.chwId.ifEmpty { p.uid },
+                name = p.displayName.ifEmpty { "Community Health Worker" },
+                email = p.email,
+                phone = p.phone,
+                county = p.county,
+                subCounty = p.subCounty,
+                assignedChildrenCount = 0,
+                activeHighRiskCount = 0,
+                status = if (p.isVerified) "Active" else "Pending Approval"
+            )
+        }
+    }
+
+    // Live Parent profiles from Room (reactive)
+    val localParentList by (app?.offlineRepo?.observeAllParentProfiles()
+        ?: kotlinx.coroutines.flow.flowOf(emptyList())).collectAsState(initial = emptyList())
+
+    // Live Firestore Parents
     val liveParentList by repository.getAllParents().collectAsState(initial = emptyList())
-    var fallbackParents by remember {
-        mutableStateOf(
-            listOf(
-                UserProfile(
-                    uid = "parent-101",
-                    email = "turkana.family@gmail.com",
-                    displayName = "Amina Ewoi (Mother)",
-                    role = UserRole.PARENT,
-                    phone = "+254712345678",
-                    county = "Turkana",
-                    subCounty = "Kakuma West",
-                    assignedChildName = "Akiru Ewoi",
-                    isVerified = true,
-                    verificationStatus = "approved"
-                ),
-                UserProfile(
-                    uid = "parent-102",
-                    email = "turkana.family@gmail.com",
-                    displayName = "Ekidor Ewoi (Father)",
-                    role = UserRole.PARENT,
-                    phone = "+254722334455",
-                    county = "Turkana",
-                    subCounty = "Kakuma West",
-                    assignedChildName = "Akiru Ewoi",
-                    isVerified = true,
-                    verificationStatus = "approved"
-                ),
-                UserProfile(
-                    uid = "parent-103",
-                    email = "chegem.family@health.org",
-                    displayName = "Nakor Chegem (Guardian)",
-                    role = UserRole.PARENT,
-                    phone = "+254733445566",
-                    county = "Marsabit",
-                    subCounty = "Moyale Central",
-                    assignedChildName = "Lokai Chegem",
-                    isVerified = true,
-                    verificationStatus = "approved"
-                )
-            )
-        )
-    }
-    val displayedParentList: List<UserProfile> = if (liveParentList.isNotEmpty()) liveParentList else fallbackParents
 
-    // Deletion Dialog State
-    var profileToDelete by remember { mutableStateOf<Pair<String, String>?>(null) }
-    var isDeletingChw by remember { mutableStateOf(false) }
+    // Merge: Firestore is authoritative if populated, else Room
+    val displayedParentList: List<UserProfile> = liveParentList.ifEmpty { localParentList }
 
-    var childrenList by remember {
-        mutableStateOf(
-            listOf(
-                ChildProfile("TK-1042", "Akiru Ewoi", 18, "Male", "Turkana", "CHW-1042", "Maria Akiru", "None", "Unimproved", 6, -2.4f, -2.1f, 11.2f, "HIGH RISK", 0.88f),
-                ChildProfile("TK-1088", "Locham Nakor", 24, "Female", "Turkana", "CHW-1042", "Maria Akiru", "Primary", "Improved", 5, 0.2f, -0.4f, 14.5f, "LOW RISK", 0.12f),
-                ChildProfile("TK-1102", "Erupe Ekidor", 30, "Male", "Turkana", "CHW-1088", "Peter Locham", "None", "Unimproved", 7, -1.8f, -1.5f, 12.1f, "MODERATE RISK", 0.45f),
-                ChildProfile("MB-2015", "Galgalo Guyo", 14, "Male", "Marsabit", "CHW-1105", "Fatuma Wario", "None", "Unimproved", 6, -2.8f, -2.4f, 10.9f, "HIGH RISK", 0.92f)
-            )
-        )
-    }
+    // Live All Children from Room (reactive)
+    val localChildrenList by (app?.offlineRepo?.observeAllChildrenAdmin()
+        ?: kotlinx.coroutines.flow.flowOf(emptyList())).collectAsState(initial = emptyList())
 
-    // ASAL County Malnutrition Surveillance Matrix
+    // Live Pending Approvals from Room
+    val pendingApprovalList by (app?.offlineRepo?.observePendingApprovalChildren()
+        ?: kotlinx.coroutines.flow.flowOf(emptyList())).collectAsState(initial = emptyList())
+
+    // ASAL County Malnutrition Surveillance Matrix (static reference data from MOH reports)
     val countyMatrix = remember {
         listOf(
             CountySurveillanceData("Turkana County", 34.2f, 412, 89, "Crisis (Phase 4)", RiskHighRed),
@@ -136,6 +108,10 @@ fun AdminDashboardScreen(
             CountySurveillanceData("Garissa County", 26.4f, 195, 91, "Alert (Phase 2)", RiskModerateAmber)
         )
     }
+
+    // Deletion Dialog State
+    var profileToDelete by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var isDeletingChw by remember { mutableStateOf(false) }
 
     // Dialog States
     var showAddCHWDialog by remember { mutableStateOf(false) }
@@ -208,13 +184,27 @@ fun AdminDashboardScreen(
                 Tab(
                     selected = selectedTab == 2,
                     onClick = { selectedTab = 2 },
-                    text = { Text("Children (${childrenList.size})", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
+                    text = { Text("Children (${localChildrenList.size})", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
                     icon = { Icon(Icons.Default.ChildCare, contentDescription = null, modifier = Modifier.size(18.dp)) }
                 )
                 Tab(
                     selected = selectedTab == 3,
                     onClick = { selectedTab = 3 },
-                    text = { Text("ASAL Analytics", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
+                    text = {
+                        BadgedBox(badge = {
+                            if (pendingApprovalList.isNotEmpty()) {
+                                Badge { Text("${pendingApprovalList.size}") }
+                            }
+                        }) {
+                            Text("Approvals", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        }
+                    },
+                    icon = { Icon(Icons.Default.Approval, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                )
+                Tab(
+                    selected = selectedTab == 4,
+                    onClick = { selectedTab = 4 },
+                    text = { Text("Analytics", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
                     icon = { Icon(Icons.Default.Analytics, contentDescription = null, modifier = Modifier.size(18.dp)) }
                 )
             }
@@ -243,6 +233,30 @@ fun AdminDashboardScreen(
                                 Icon(Icons.Default.PersonAdd, contentDescription = null)
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text("Provision New CHW (Send Reset Email)", fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        if (displayedChwList.isEmpty()) {
+                            item {
+                                Card(
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(24.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Icon(Icons.Default.People, contentDescription = null, tint = AdminIndigo, modifier = Modifier.size(48.dp))
+                                        Spacer(modifier = Modifier.height(12.dp))
+                                        Text("No CHWs Registered Yet", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Text(
+                                            "Community Health Workers will appear here after they register through the app or are provisioned by the admin.",
+                                            fontSize = 12.sp, color = Color.Gray, textAlign = TextAlign.Center
+                                        )
+                                    }
+                                }
                             }
                         }
 
@@ -331,9 +345,6 @@ fun AdminDashboardScreen(
                                                 onClick = {
                                                     scope.launch {
                                                         repository.adminApproveCHW(chw.chwId, chw.email)
-                                                        chwList = chwList.map {
-                                                            if (it.chwId == chw.chwId) it.copy(status = "Active") else it
-                                                        }
                                                         Toast.makeText(
                                                             context,
                                                             "Approved ${chw.name}! Password reset email sent to ${chw.email}",
@@ -354,9 +365,6 @@ fun AdminDashboardScreen(
                                                 onClick = {
                                                     scope.launch {
                                                         repository.adminDeclineCHW(chw.chwId)
-                                                        chwList = chwList.map {
-                                                            if (it.chwId == chw.chwId) it.copy(status = "Declined") else it
-                                                        }
                                                         Toast.makeText(context, "Declined ${chw.name}", Toast.LENGTH_SHORT).show()
                                                     }
                                                 },
@@ -421,6 +429,30 @@ fun AdminDashboardScreen(
                                             "Parents and guardians registered across ASAL sub-counties. Multi-profile household accounts share family email credentials.",
                                             fontSize = 11.5.sp,
                                             color = Color.Gray
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        if (displayedParentList.isEmpty()) {
+                            item {
+                                Card(
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(24.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Icon(Icons.Default.FamilyRestroom, contentDescription = null, tint = AdminIndigo, modifier = Modifier.size(48.dp))
+                                        Spacer(modifier = Modifier.height(12.dp))
+                                        Text("No Parents Registered Yet", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Text(
+                                            "Parents and guardians will appear here after they register through the app.",
+                                            fontSize = 12.sp, color = Color.Gray, textAlign = TextAlign.Center
                                         )
                                     }
                                 }
@@ -504,7 +536,30 @@ fun AdminDashboardScreen(
                             .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        items(childrenList) { child ->
+                        if (localChildrenList.isEmpty()) {
+                            item {
+                                Card(
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(24.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Icon(Icons.Default.ChildCare, contentDescription = null, tint = AdminIndigo, modifier = Modifier.size(48.dp))
+                                        Spacer(modifier = Modifier.height(12.dp))
+                                        Text("No Children Enrolled Yet", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Text(
+                                            "Children will appear here once Community Health Workers enroll them during household visits.",
+                                            fontSize = 12.sp, color = Color.Gray, textAlign = TextAlign.Center
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        items(localChildrenList) { child ->
                             Card(
                                 shape = RoundedCornerShape(14.dp),
                                 colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -620,7 +675,199 @@ fun AdminDashboardScreen(
 
                 3 -> {
                     // =========================================================
-                    // TAB 3: ASAL County Analytics & Consequence Projections
+                    // TAB 3: Pending Child-to-CHW Assignment Approvals
+                    // =========================================================
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // Header Card
+                        item {
+                            Card(
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF8E1))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.Approval, contentDescription = null, tint = RiskModerateAmber)
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Text("Pending Monitoring Approvals", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                        Text(
+                                            "Children enrolled by CHWs awaiting your approval for growth monitoring and tracking.",
+                                            fontSize = 11.5.sp,
+                                            color = Color.Gray
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        if (pendingApprovalList.isEmpty()) {
+                            item {
+                                Card(
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(24.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = RiskLowGreen, modifier = Modifier.size(48.dp))
+                                        Spacer(modifier = Modifier.height(12.dp))
+                                        Text("All Clear", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = RiskLowGreen)
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Text(
+                                            "No pending approvals at this time. All child enrolments have been reviewed.",
+                                            fontSize = 12.sp, color = Color.Gray, textAlign = TextAlign.Center
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        items(pendingApprovalList) { child ->
+                            Card(
+                                shape = RoundedCornerShape(14.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    // Child Info Row
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(child.name, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                            Text(
+                                                "ID: ${child.childId} • Age: ${child.ageMonths}m (${child.sex}) • ${child.county}",
+                                                fontSize = 12.sp, color = Color.Gray
+                                            )
+                                        }
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = RiskModerateContainer
+                                        ) {
+                                            Text(
+                                                text = "PENDING",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = RiskModerateAmber,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                            )
+                                        }
+                                    }
+
+                                    // Risk & Anthropometrics
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = when (child.latestRiskTier) {
+                                                "HIGH RISK" -> RiskHighContainer
+                                                "MODERATE RISK" -> RiskModerateContainer
+                                                else -> RiskLowContainer
+                                            }
+                                        ) {
+                                            Text(
+                                                text = child.latestRiskTier,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = when (child.latestRiskTier) {
+                                                    "HIGH RISK" -> RiskHighRed
+                                                    "MODERATE RISK" -> RiskModerateAmber
+                                                    else -> RiskLowGreen
+                                                },
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                            )
+                                        }
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = MaterialTheme.colorScheme.surfaceVariant
+                                        ) {
+                                            Text(
+                                                text = "HAZ: ${child.currentHaz} SD",
+                                                fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                            )
+                                        }
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = if (child.currentMuac < 11.5f) RiskHighContainer else MaterialTheme.colorScheme.surfaceVariant
+                                        ) {
+                                            Text(
+                                                text = "MUAC: ${child.currentMuac}cm",
+                                                fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                                                color = if (child.currentMuac < 11.5f) RiskHighRed else Color.DarkGray,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                            )
+                                        }
+                                    }
+
+                                    // Assigned CHW
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(16.dp), tint = AdminIndigo)
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("CHW: ${child.assignedChwName} (${child.assignedChwId})", fontSize = 12.sp, color = AdminIndigo, fontWeight = FontWeight.SemiBold)
+                                    }
+
+                                    // Approve / Reject Buttons
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Button(
+                                            onClick = {
+                                                scope.launch {
+                                                    app?.offlineRepo?.approveChildForTracking(child.childId)
+                                                    Toast.makeText(
+                                                        context,
+                                                        "✅ ${child.name} approved for monitoring by ${child.assignedChwName}",
+                                                        Toast.LENGTH_LONG
+                                                    ).show()
+                                                }
+                                            },
+                                            shape = RoundedCornerShape(10.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = RiskLowGreen),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Approve for Monitoring", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                        }
+
+                                        OutlinedButton(
+                                            onClick = {
+                                                Toast.makeText(context, "Enrolment for ${child.name} was not approved.", Toast.LENGTH_SHORT).show()
+                                            },
+                                            shape = RoundedCornerShape(10.dp),
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = RiskHighRed)
+                                        ) {
+                                            Text("Decline", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                4 -> {
+                    // =========================================================
+                    // TAB 4: ASAL County Analytics & Consequence Projections
                     // =========================================================
                     LazyColumn(
                         modifier = Modifier
@@ -819,7 +1066,9 @@ fun AdminDashboardScreen(
                                 subCounty = newSubCounty,
                                 status = "Pending Approval"
                             )
-                            chwList = chwList + newChw
+                            scope.launch {
+                                repository.adminCreateCHW(newChw)
+                            }
                             Toast.makeText(context, "CHW profile created! Reset email sent to $newEmail", Toast.LENGTH_LONG).show()
                             showAddCHWDialog = false
                         }
@@ -846,10 +1095,12 @@ fun AdminDashboardScreen(
                     displayedChwList.forEach { chw ->
                         Surface(
                             onClick = {
-                                childrenList = childrenList.map { c ->
-                                    if (c.childId == selectedChildForAssign!!.childId) {
-                                        c.copy(assignedChwId = chw.chwId, assignedChwName = chw.name)
-                                    } else c
+                                scope.launch {
+                                    val updated = selectedChildForAssign!!.copy(
+                                        assignedChwId = chw.chwId,
+                                        assignedChwName = chw.name
+                                    )
+                                    app?.offlineRepo?.updateChildProfile(updated)
                                 }
                                 Toast.makeText(context, "Assigned to ${chw.name}", Toast.LENGTH_SHORT).show()
                                 showAssignDialog = false
@@ -887,14 +1138,13 @@ fun AdminDashboardScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        childrenList = childrenList.map { c ->
-                            if (c.childId == selectedChildForEdit!!.childId) {
-                                c.copy(
-                                    name = editName,
-                                    ageMonths = editAge.toIntOrNull() ?: c.ageMonths,
-                                    maternalEducation = editEdu
-                                )
-                            } else c
+                        val updated = selectedChildForEdit!!.copy(
+                            name = editName,
+                            ageMonths = editAge.toIntOrNull() ?: selectedChildForEdit!!.ageMonths,
+                            maternalEducation = editEdu
+                        )
+                        scope.launch {
+                            app?.offlineRepo?.updateChildProfile(updated)
                         }
                         Toast.makeText(context, "Profile updated", Toast.LENGTH_SHORT).show()
                         showEditChildDialog = false
@@ -966,11 +1216,6 @@ fun AdminDashboardScreen(
                     onClick = {
                         scope.launch {
                             repository.adminDeleteUserProfile(targetId, isChw = isDeletingChw)
-                            if (isDeletingChw) {
-                                chwList = chwList.filterNot { it.chwId == targetId }
-                            } else {
-                                fallbackParents = fallbackParents.filterNot { it.uid == targetId }
-                            }
                             profileToDelete = null
                             Toast.makeText(context, "Deleted profile for $targetName", Toast.LENGTH_SHORT).show()
                         }

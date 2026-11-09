@@ -753,6 +753,10 @@ fun CompleteProfileScreen(
                                             verificationStatus = initialProfile.verificationStatus,
                                             profileCompleted = true
                                         )
+                                        try {
+                                            val app = context.applicationContext as? com.strath.finalpr0ject.AfyaEarlyApp
+                                            app?.offlineRepo?.cacheUserProfile(updatedProfile, pendingSync = true)
+                                        } catch (_: Exception) {}
                                         repository.saveUserProfile(updatedProfile)
                                         isLoading = false
                                         onProfileCompleted(UserRole.CHW, chwCode.ifEmpty { "CHW-${(1000..9999).random()}" })
@@ -793,8 +797,13 @@ fun CompleteProfileScreen(
 
                                         // 1. Save child to local Room database for 100% offline access
                                         try {
-                                            val childEntity = ChildEntity.fromDomainModel(childRecord)
-                                            AppDatabase.getDatabase(context).childDao().insertOrUpdate(childEntity)
+                                            val app = context.applicationContext as? com.strath.finalpr0ject.AfyaEarlyApp
+                                            if (app != null) {
+                                                app.offlineRepo.enrollChild(childRecord, guardianUid = finalUid)
+                                            } else {
+                                                val childEntity = ChildEntity.fromDomainModel(childRecord, pendingSync = true)
+                                                AppDatabase.getDatabase(context).childDao().insertOrUpdate(childEntity)
+                                            }
                                         } catch (_: Exception) {}
 
                                         // 2. Update Guardian profile with the new child ID
@@ -812,6 +821,11 @@ fun CompleteProfileScreen(
                                             assignedChildName = childRecord.name,
                                             profileCompleted = true
                                         )
+
+                                        try {
+                                            val app = context.applicationContext as? com.strath.finalpr0ject.AfyaEarlyApp
+                                            app?.offlineRepo?.cacheUserProfile(updatedProfile, pendingSync = true)
+                                        } catch (_: Exception) {}
 
                                         repository.saveUserProfile(updatedProfile)
                                         repository.linkGuardianChild(finalUid, childRecord)

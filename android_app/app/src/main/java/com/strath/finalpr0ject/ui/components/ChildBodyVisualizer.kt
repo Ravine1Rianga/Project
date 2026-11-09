@@ -128,11 +128,18 @@ fun ChildBodyVisualizer(
         )
     }
 
+    // Compute dynamic height ratio directly from inserted measurements
+    val actualHeightRatio = remember(heightCm, expectedHeightCm) {
+        if (expectedHeightCm > 0f) {
+            (heightCm / expectedHeightCm).coerceIn(0.60f, 1.25f)
+        } else 0.85f
+    }
+
     val animatedHeightScale by animateFloatAsState(
         targetValue = when (visualMode) {
-            GrowthVisualMode.CURRENT_STUNTED -> 0.82f
+            GrowthVisualMode.CURRENT_STUNTED -> actualHeightRatio
             GrowthVisualMode.HEALTHY_BENCHMARK -> 1.0f
-            GrowthVisualMode.CATCH_UP_PROJECTION -> 0.94f
+            GrowthVisualMode.CATCH_UP_PROJECTION -> ((actualHeightRatio + 1.0f) / 2f).coerceAtMost(1.0f)
         },
         animationSpec = tween(durationMillis = 600),
         label = "heightScale"
@@ -372,10 +379,12 @@ fun ChildBodyVisualizer(
                     val legHeight = groundY - pelvisY
 
                     // Body Widths based on nutrition mode (stunting causes wasting & thinner limbs)
+                    // Dynamically adjusts according to MUAC and HAZ
+                    val muacThinning = ((muacCm - 11.5f) / 4.0f).coerceIn(-0.35f, 0.25f)
                     val widthFactor = when (visualMode) {
-                        GrowthVisualMode.CURRENT_STUNTED -> 0.75f
+                        GrowthVisualMode.CURRENT_STUNTED -> (0.85f + muacThinning).coerceIn(0.55f, 1.15f)
                         GrowthVisualMode.HEALTHY_BENCHMARK -> 1.05f
-                        GrowthVisualMode.CATCH_UP_PROJECTION -> 0.92f
+                        GrowthVisualMode.CATCH_UP_PROJECTION -> 0.95f
                     }
 
                     val torsoWidth = (totalHeight * 0.22f) * widthFactor

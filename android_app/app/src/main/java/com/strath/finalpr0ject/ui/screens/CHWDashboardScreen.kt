@@ -17,6 +17,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -58,83 +59,50 @@ fun CHWDashboardScreen(
     val county = userProfile?.county?.ifEmpty { "Turkana" } ?: "Turkana"
     val subCounty = userProfile?.subCounty?.ifEmpty { "Field Unit" } ?: "Field Unit"
 
-    // Check if this is the original demo account (Maria Akiru)
-    val isDemoWorker = effectiveChwId == "CHW-1042" || userProfile?.email?.contains("maria.akiru", ignoreCase = true) == true
-
     var searchQuery by remember { mutableStateOf("") }
     var selectedTriageFilter by remember { mutableStateOf("ALL") } // ALL, HIGH, MODERATE, LOW
 
-    // Assigned Children State: Starts empty for newly registered CHWs; seeded demo for Maria Akiru
-    var assignedChildren by remember {
-        mutableStateOf<List<ChildProfile>>(
-            if (isDemoWorker) {
-                listOf(
-                    ChildProfile(
-                        childId = "TK-1042",
-                        name = "Akiru Ewoi",
-                        ageMonths = 18,
-                        sex = "Male",
-                        county = county,
-                        assignedChwId = effectiveChwId,
-                        assignedChwName = chwName,
-                        maternalEducation = "None",
-                        waterSource = "Unimproved",
-                        householdSize = 6,
-                        currentHaz = -2.4f,
-                        currentWhz = -2.1f,
-                        currentMuac = 11.2f,
-                        latestRiskTier = "HIGH RISK",
-                        latestProbability = 0.88f
-                    ),
-                    ChildProfile(
-                        childId = "TK-1150",
-                        name = "Napeyok Lokor",
-                        ageMonths = 12,
-                        sex = "Female",
-                        county = county,
-                        assignedChwId = effectiveChwId,
-                        assignedChwName = chwName,
-                        maternalEducation = "None",
-                        waterSource = "Unimproved",
-                        householdSize = 5,
-                        currentHaz = -1.9f,
-                        currentWhz = -1.6f,
-                        currentMuac = 11.9f,
-                        latestRiskTier = "MODERATE RISK",
-                        latestProbability = 0.52f
-                    ),
-                    ChildProfile(
-                        childId = "TK-1088",
-                        name = "Locham Nakor",
-                        ageMonths = 24,
-                        sex = "Female",
-                        county = county,
-                        assignedChwId = effectiveChwId,
-                        assignedChwName = chwName,
-                        maternalEducation = "Primary",
-                        waterSource = "Improved",
-                        householdSize = 5,
-                        currentHaz = 0.2f,
-                        currentWhz = -0.4f,
-                        currentMuac = 14.5f,
-                        latestRiskTier = "LOW RISK",
-                        latestProbability = 0.12f
-                    )
-                )
-            } else {
-                emptyList()
-            }
-        )
-    }
+    // Assigned Children State: Starts empty, loaded directly from database/Firestore
+    var assignedChildren by remember { mutableStateOf<List<ChildProfile>>(emptyList()) }
 
-    // Load scoped children from local Room database
+    // Map of childId -> List of ScreeningEntity visits for inline growth chart
+    var childrenVisitsMap by remember { mutableStateOf<Map<String, List<com.strath.finalpr0ject.data.local.entity.ScreeningEntity>>>(emptyMap()) }
+    var expandedChildChartId by remember { mutableStateOf<String?>(null) }
+
+    // Load scoped approved children from local Room database with reactive observation
+    val app = context.applicationContext as? com.strath.finalpr0ject.AfyaEarlyApp
+    val isOnlineState by (app?.syncManager?.isOnline ?: kotlinx.coroutines.flow.MutableStateFlow(true)).collectAsState()
+
     LaunchedEffect(effectiveChwId) {
         try {
-            val dbChildren = AppDatabase.getDatabase(context).childDao().getChildrenByChw(effectiveChwId)
-            if (dbChildren.isNotEmpty()) {
+            if (app != null) {
+                app.offlineRepo.observeChildrenForChw(effectiveChwId).collect { childrenList ->
+                    assignedChildren = childrenList
+                    // Pre-fetch screening visits for these children
+                    val newMap = mutableMapOf<String, List<com.strath.finalpr0ject.data.local.entity.ScreeningEntity>>()
+                    for (c in childrenList) {
+                        val visits = app.offlineRepo.getScreeningsForChild(c.childId)
+                        newMap[c.childId] = if (visits.isNotEmpty()) visits else listOf(
+                            com.strath.finalpr0ject.data.local.entity.ScreeningEntity(
+                                childId = c.childId,
+                                ageMonths = c.ageMonths,
+                                weightKg = if (c.currentWhz < -2.0f) 7.5f else 9.2f,
+                                heightCm = (75.0f + c.currentHaz * 3.0f).coerceIn(45f, 120f),
+                                haz = c.currentHaz,
+                                whz = c.currentWhz,
+                                muac = c.currentMuac,
+                                stuntingRiskTier = c.latestRiskTier,
+                                predictedProbability = c.latestProbability,
+                                clinicalNotes = "Baseline enrolment measurement",
+                                feedingCategory = if (c.ageMonths < 6) "Exclusive Breastfeeding (0-6m)" else if (c.ageMonths < 9) "Complementary Weaning (6-9m)" else "Family Foods"
+                            )
+                        )
+                    }
+                    childrenVisitsMap = newMap
+                }
+            } else {
+                val dbChildren = AppDatabase.getDatabase(context).childDao().getApprovedChildrenByChw(effectiveChwId)
                 assignedChildren = dbChildren.map { it.toDomainModel() }
-            } else if (!isDemoWorker) {
-                assignedChildren = emptyList()
             }
         } catch (_: Exception) {}
     }
@@ -142,6 +110,14 @@ fun CHWDashboardScreen(
     var showRegisterChildDialog by remember { mutableStateOf(false) }
     var selectedChildForAction by remember { mutableStateOf<ChildProfile?>(null) }
     var showActionDialog by remember { mutableStateOf(false) }
+
+    // State for viewing digitized growth chart and nutrition recommendations modal
+    var selectedChildForGrowthChart by remember { mutableStateOf<ChildProfile?>(null) }
+    var showGrowthChartModal by remember { mutableStateOf(false) }
+    var childScreeningVisits by remember { mutableStateOf<List<com.strath.finalpr0ject.data.local.entity.ScreeningEntity>>(emptyList()) }
+
+    // Dialog for recording monthly follow-up measurement visit
+    var showRecordVisitDialog by remember { mutableStateOf(false) }
 
     // Filtered Children List
     val filteredChildren = remember(assignedChildren, searchQuery, selectedTriageFilter) {
@@ -222,6 +198,32 @@ fun CHWDashboardScreen(
             // =================================================================
             item {
                 Spacer(modifier = Modifier.height(6.dp))
+
+                if (!isOnlineState) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.CloudOff,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                "Offline Mode: All screenings & enrollments saved locally. Will sync automatically once connected.",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                        }
+                    }
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -531,18 +533,46 @@ fun CHWDashboardScreen(
                         // Action Buttons Bar
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
+                            val isExpanded = expandedChildChartId == child.childId
+
+                            // Toggle Digitized Road to Health Graph directly on child's card
+                            Button(
+                                onClick = {
+                                    expandedChildChartId = if (isExpanded) null else child.childId
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isExpanded) Color(0xFF1E293B) else CalmGreenPrimary
+                                ),
+                                modifier = Modifier.weight(1.2f),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp)
+                            ) {
+                                Icon(
+                                    if (isExpanded) Icons.Default.ExpandLess else Icons.AutoMirrored.Filled.ShowChart,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    if (isExpanded) "Hide Chart" else "Road to Health",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
                             // Start AI Screening Button
                             Button(
                                 onClick = { onStartScreeningForChild(child) },
                                 shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = CalmGreenPrimary),
-                                modifier = Modifier.weight(1f)
+                                colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
+                                modifier = Modifier.weight(0.9f),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp)
                             ) {
-                                Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("AI Screen", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("AI Screen", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
 
                             // Quick Action Button: Dispense RUTF / Schedule Visit
@@ -552,11 +582,49 @@ fun CHWDashboardScreen(
                                     showActionDialog = true
                                 },
                                 shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.weight(0.8f),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp)
                             ) {
-                                Icon(Icons.Default.MedicalServices, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Actions", fontSize = 12.sp)
+                                Icon(Icons.Default.MedicalServices, contentDescription = null, modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("Actions", fontSize = 11.sp)
+                            }
+                        }
+
+                        // =========================================================================
+                        // INLINE DIGITIZED ROAD TO HEALTH GRAPH & MONTHLY VISITS TABLE
+                        // Visible directly beneath child's record when approved & opened
+                        // =========================================================================
+                        AnimatedVisibility(visible = expandedChildChartId == child.childId) {
+                            val childVisits = childrenVisitsMap[child.childId] ?: emptyList()
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 10.dp)
+                            ) {
+                                HorizontalDivider(color = Color(0xFFE2E8F0), thickness = 1.dp)
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                com.strath.finalpr0ject.ui.components.DigitizedRoadToHealthChart(
+                                    child = child,
+                                    screeningVisits = childVisits,
+                                    showInlineLogger = true,
+                                    onAddMonthlyVisit = { newVisit ->
+                                        scope.launch {
+                                            try {
+                                                if (app != null) {
+                                                    app.offlineRepo.recordMonthlyScreening(newVisit)
+                                                } else {
+                                                    AppDatabase.getDatabase(context).screeningDao().insertScreening(newVisit)
+                                                }
+                                                // Refresh visits in local map
+                                                val updatedList = (childrenVisitsMap[child.childId] ?: emptyList()) + newVisit
+                                                childrenVisitsMap = childrenVisitsMap + (child.childId to updatedList)
+                                            } catch (_: Exception) {}
+                                        }
+                                        Toast.makeText(context, "Logged visit for ${child.name}! Curve updated.", Toast.LENGTH_SHORT).show()
+                                    }
+                                )
                             }
                         }
                     }
@@ -756,18 +824,46 @@ fun CHWDashboardScreen(
                                 currentMuac = muacVal,
                                 latestRiskTier = risk,
                                 latestProbability = if (risk == "HIGH RISK") 0.88f else if (risk == "MODERATE RISK") 0.50f else 0.12f,
-                                lastScreeningDate = System.currentTimeMillis()
+                                lastScreeningDate = System.currentTimeMillis(),
+                                approvalStatus = "pending_approval",
+                                isApprovedForTracking = false
                             )
 
-                            // Save into local Room database
+                            // Save into local Room database & queue sync for Admin approval
                             scope.launch {
                                 try {
-                                    AppDatabase.getDatabase(context).childDao().insertOrUpdate(ChildEntity.fromDomainModel(newChild))
+                                    if (app != null) {
+                                        app.offlineRepo.enrollChild(newChild)
+                                        // Also insert initial baseline screening visit into screenings table
+                                        val initialVisit = com.strath.finalpr0ject.data.local.entity.ScreeningEntity(
+                                            childId = newChild.childId,
+                                            timestamp = System.currentTimeMillis(),
+                                            ageMonths = age,
+                                            weightKg = wVal,
+                                            heightCm = hVal,
+                                            haz = zs.haz,
+                                            whz = zs.whz,
+                                            muac = muacVal,
+                                            stuntingRiskTier = risk,
+                                            predictedProbability = newChild.latestProbability,
+                                            clinicalNotes = "Initial enrolment baseline measurement",
+                                            feedingCategory = when {
+                                                age < 6 -> "Exclusive Breastfeeding (0-6m)"
+                                                age in 6..8 -> "Complementary Weaning (6-9m)"
+                                                age in 9..11 -> "Finger Foods & Active Feeding (9-11m)"
+                                                else -> "Family Foods (1-2+ yrs)"
+                                            },
+                                            isSynced = false
+                                        )
+                                        app.offlineRepo.recordMonthlyScreening(initialVisit)
+                                    } else {
+                                        AppDatabase.getDatabase(context).childDao().insertOrUpdate(ChildEntity.fromDomainModel(newChild, pendingSync = true))
+                                    }
                                 } catch (_: Exception) {}
                             }
 
-                            assignedChildren = listOf(newChild) + assignedChildren
-                            Toast.makeText(context, "Enrolled ${newName.trim()} under $chwName!", Toast.LENGTH_SHORT).show()
+                            val syncNotice = if (!isOnlineState) " (Saved offline)" else ""
+                            Toast.makeText(context, "Enrolled ${newName.trim()}! Sent to Facility Admin for monitoring approval.$syncNotice", Toast.LENGTH_LONG).show()
                             showRegisterChildDialog = false
                         }
                     },

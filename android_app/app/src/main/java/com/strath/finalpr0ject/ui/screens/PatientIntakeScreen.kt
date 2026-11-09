@@ -25,6 +25,7 @@ import com.strath.finalpr0ject.ml.InferenceOutput
 import com.strath.finalpr0ject.ml.ScreeningInput
 import com.strath.finalpr0ject.ml.WHOAnthroCalculator
 import com.strath.finalpr0ject.ui.theme.*
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,6 +35,7 @@ fun PatientIntakeScreen(
     onPredictionComplete: (ChildProfile, ScreeningInput, InferenceOutput) -> Unit
 ) {
     val scrollState = rememberScrollState()
+    val scope = rememberCoroutineScope()
 
     // Form State prefilled from initial child
     var childName by remember { mutableStateOf(initialChild.name) }
@@ -211,6 +213,34 @@ fun PatientIntakeScreen(
                     )
 
                     val result = AfyaEarlyApp.instance.mlEngine.predict(input)
+
+                    // Automatically record this screening visit in local database for the digital growth chart
+                    scope.launch {
+                        try {
+                            val screeningRecord = com.strath.finalpr0ject.data.local.entity.ScreeningEntity(
+                                childId = initialChild.childId,
+                                timestamp = System.currentTimeMillis(),
+                                ageMonths = age,
+                                weightKg = w,
+                                heightCm = h,
+                                haz = zs.haz,
+                                whz = zs.whz,
+                                muac = m,
+                                stuntingRiskTier = result.riskTier,
+                                predictedProbability = result.calibratedProbability,
+                                clinicalNotes = "AI Edge Inference: ${result.riskTier} (${(result.calibratedProbability * 100).toInt()}%)",
+                                feedingCategory = when {
+                                    age < 6 -> "Exclusive Breastfeeding (0-6m)"
+                                    age in 6..8 -> "Complementary Weaning (6-9m)"
+                                    age in 9..11 -> "Finger Foods & Active Feeding (9-11m)"
+                                    else -> "Family Foods (1-2+ yrs)"
+                                },
+                                isSynced = false
+                            )
+                            AfyaEarlyApp.instance.offlineRepo.recordMonthlyScreening(screeningRecord)
+                        } catch (_: Exception) {}
+                    }
+
                     onPredictionComplete(initialChild, input, result)
                 },
                 modifier = Modifier
